@@ -87,7 +87,7 @@ try {
                 'ver_reportes' => true,
                 'reportar_incidencia' => true
             ];
-            
+            $_SESSION['empleado_id'] = $user['ID_Empleado'];
             // Redirigir al dashboard de admin
             header("Location: ../views/admin/dashboard.php");
             exit();

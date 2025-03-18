@@ -12,6 +12,20 @@ require_once '../../config/database.php';
 $database = new Database();
 $conn = $database->getConnection();
 
+// Obtener los departamentos asignados al usuario actual
+$deptos_query = "SELECT d.ID, d.Nombre 
+                 FROM EMPLEADO_DEPTO ed 
+                 JOIN DEPARTAMENTO d ON ed.ID_Depto = d.ID 
+                 WHERE ed.ID_Empleado = ?";
+$deptos_stmt = $conn->prepare($deptos_query);
+$deptos_stmt->execute([$_SESSION['empleado_id']]);
+$departamentos_usuario = $deptos_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Si el usuario no tiene departamentos asignados y no es administrador, mostrar error
+if (count($departamentos_usuario) == 0 && $_SESSION['role_name'] != 'Administrador') {
+    $error = "No tiene departamentos asignados para agregar elementos de configuración.";
+}
+
 // Obtener listas para los selectores
 $tipoStmt = $conn->prepare("SELECT ID, Nombre FROM TIPO_CI ORDER BY Nombre");
 $tipoStmt->execute();
@@ -19,8 +33,73 @@ $tipoStmt->execute();
 $proveedorStmt = $conn->prepare("SELECT ID, Nombre FROM PROVEEDOR ORDER BY Nombre");
 $proveedorStmt->execute();
 
-$edificioStmt = $conn->prepare("SELECT ID, Nombre FROM EDIFICIO ORDER BY Nombre");
-$edificioStmt->execute();
+// Para administradores, mostrar todos los departamentos
+if ($_SESSION['role_name'] == 'Administrador') {
+    $deptoStmt = $conn->prepare("SELECT ID, Nombre FROM DEPARTAMENTO ORDER BY Nombre");
+    $deptoStmt->execute();
+    $departamentos = $deptoStmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    // Para otros usuarios, usar los departamentos ya obtenidos
+    $departamentos = $departamentos_usuario;
+}
+
+// Obtener los edificios permitidos según el rol
+$edificios_permitidos = array();
+
+if ($_SESSION['role_name'] == 'Administrador' || 
+    $_SESSION['role_name'] == 'Gerente TI' || 
+    $_SESSION['role_name'] == 'Técnico TI' || 
+    $_SESSION['role_name'] == 'Encargado Inventario' || 
+    $_SESSION['role_name'] == 'Supervisor Infraestructura' || 
+    $_SESSION['role_name'] == 'Supervisor Sistemas') {
+    // Estos roles pueden agregar elementos en cualquier edificio
+    $edificios_query = "SELECT ID, Nombre FROM EDIFICIO ORDER BY Nombre";
+    $edificioStmt = $conn->prepare($edificios_query);
+    $edificioStmt->execute();
+    $edificios = $edificioStmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    // Para roles específicos de ubicación, filtrar por categoría de ubicación
+    switch ($_SESSION['role_name']) {
+        case 'Coordinador TI CEDIS':
+        case 'Usuario CEDIS':
+            // Solo puede agregar en edificios CEDIS
+            $edificios_query = "SELECT e.ID, e.Nombre 
+                               FROM EDIFICIO e
+                               JOIN CATEGORIA_UBICACION cu ON e.ID_CategoriaUbicacion = cu.ID
+                               WHERE cu.Nombre = 'CEDIS'
+                               ORDER BY e.Nombre";
+            break;
+            
+        case 'Coordinador TI Sucursales':
+            // Solo puede agregar en edificios de Sucursales
+            $edificios_query = "SELECT e.ID, e.Nombre 
+                               FROM EDIFICIO e
+                               JOIN CATEGORIA_UBICACION cu ON e.ID_CategoriaUbicacion = cu.ID
+                               WHERE cu.Nombre = 'Sucursal'
+                               ORDER BY e.Nombre";
+            break;
+            
+        case 'Coordinador TI Corporativo':
+            // Solo puede agregar en edificios Corporativos
+            $edificios_query = "SELECT e.ID, e.Nombre 
+                               FROM EDIFICIO e
+                               JOIN CATEGORIA_UBICACION cu ON e.ID_CategoriaUbicacion = cu.ID
+                               WHERE cu.Nombre = 'Corporativo'
+                               ORDER BY e.Nombre";
+            break;
+            
+        default:
+            // Usuario Final y otros roles no especificados - no permitir agregar
+            $edificios = array();
+            $error = "Su rol no tiene permisos para agregar elementos de configuración.";
+    }
+    
+    if (!isset($error)) {
+        $edificioStmt = $conn->prepare($edificios_query);
+        $edificioStmt->execute();
+        $edificios = $edificioStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
 
 $empleadoStmt = $conn->prepare("SELECT ID, Nombre FROM EMPLEADO ORDER BY Nombre");
 $empleadoStmt->execute();
@@ -37,37 +116,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $numSerie = $_POST['num_serie'];
         $fechaAdquisicion = $_POST['fecha_adquisicion'];
         $tipoCI = $_POST['tipo_ci'];
+        $departamento = $_POST['departamento'];
         $localizacion = $_POST['localizacion'];
+        $edificio = $_POST['edificio'];
         $encargado = $_POST['encargado'];
         $proveedor = $_POST['proveedor'];
         
-        // Preparar la consulta SQL
-        $query = "INSERT INTO CI (Nombre, Descripcion, NumSerie, FechaAdquisicion, ID_TipoCI, ID_Localizacion, ID_Encargado, ID_Proveedor, CreatedBy, CreatedDate) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())";
-        
-        $stmt = $conn->prepare($query);
-        
-        // Vincular parámetros
-        $stmt->bindParam(1, $nombre);
-        $stmt->bindParam(2, $descripcion);
-        $stmt->bindParam(3, $numSerie);
-        $stmt->bindParam(4, $fechaAdquisicion);
-        $stmt->bindParam(5, $tipoCI);
-        $stmt->bindParam(6, $localizacion);
-        $stmt->bindParam(7, $encargado);
-        $stmt->bindParam(8, $proveedor);
-        $stmt->bindParam(9, $_SESSION['user_id']);
-        
-        // Ejecutar la consulta
-        if ($stmt->execute()) {
-            // Redireccionar a la página de gestión de CIs con mensaje de éxito
-            header("Location: gestion-ci.php?success=1");
-            exit;
+        // Verificar si el usuario tiene permiso para este departamento
+        $tiene_permiso = false;
+        if ($_SESSION['role_name'] == 'Administrador') {
+            $tiene_permiso = true;
         } else {
-            $error = "Error al guardar el elemento de configuración.";
+            foreach ($departamentos_usuario as $depto) {
+                if ($depto['ID'] == $departamento) {
+                    $tiene_permiso = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!$tiene_permiso) {
+            $error = "No tiene permiso para agregar elementos a este departamento.";
+        } else {
+            // Verificar que el edificio seleccionado esté permitido para este usuario
+            $edificio_permitido = false;
+            if ($_SESSION['role_name'] == 'Administrador' || 
+                $_SESSION['role_name'] == 'Gerente TI' || 
+                $_SESSION['role_name'] == 'Técnico TI' || 
+                $_SESSION['role_name'] == 'Encargado Inventario' || 
+                $_SESSION['role_name'] == 'Supervisor Infraestructura' || 
+                $_SESSION['role_name'] == 'Supervisor Sistemas') {
+                $edificio_permitido = true;
+            } else {
+                // Verificar que el edificio pertenezca a la categoría correcta
+                $verificar_query = "SELECT 1 FROM EDIFICIO e
+                                  JOIN CATEGORIA_UBICACION cu ON e.ID_CategoriaUbicacion = cu.ID
+                                  WHERE e.ID = ?";
+                
+                // Añadir la condición según el rol
+                switch ($_SESSION['role_name']) {
+                    case 'Coordinador TI CEDIS':
+                    case 'Usuario CEDIS':
+                        $verificar_query .= " AND cu.Nombre = 'CEDIS'";
+                        break;
+                    case 'Coordinador TI Sucursales':
+                        $verificar_query .= " AND cu.Nombre = 'Sucursal'";
+                        break;
+                    case 'Coordinador TI Corporativo':
+                        $verificar_query .= " AND cu.Nombre = 'Corporativo'";
+                        break;
+                    default:
+                        break;
+                }
+                
+                $verificar_stmt = $conn->prepare($verificar_query);
+                $verificar_stmt->execute([$edificio]);
+                $edificio_permitido = ($verificar_stmt->rowCount() > 0);
+            }
+            
+            if (!$edificio_permitido) {
+                $error = "No tiene permiso para agregar elementos en este edificio.";
+            } else {
+                // Preparar la consulta SQL
+                $query = "INSERT INTO CI (Nombre, Descripcion, NumSerie, FechaAdquisicion, ID_TipoCI, 
+                         ID_Departamento, ID_Localizacion, ID_Encargado, ID_Proveedor, CreatedBy, CreatedDate) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())";
+                
+                $stmt = $conn->prepare($query);
+                
+                // Vincular parámetros
+                $stmt->execute([
+                    $nombre,
+                    $descripcion,
+                    $numSerie,
+                    $fechaAdquisicion,
+                    $tipoCI,
+                    $departamento,
+                    $localizacion,
+                    $encargado,
+                    $proveedor,
+                    $_SESSION['user_id']
+                ]);
+                
+                // Redireccionar a la página de gestión de CIs con mensaje de éxito
+                header("Location: gestion-ci.php?success=1");
+                exit;
+            }
         }
     } catch (PDOException $e) {
-        $error = "Error en la base de datos: " . $e->getMessage();
+        $error = "Error al guardar el elemento de configuración: " . $e->getMessage();
     }
 }
 ?>
@@ -120,12 +257,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 <div class="row mb-3">
                     <div class="col-md-6">
+                        <label for="departamento" class="form-label">Departamento *</label>
+                        <select class="form-select" id="departamento" name="departamento" required>
+                            <option value="">Seleccionar departamento...</option>
+                            <?php foreach ($departamentos as $depto): ?>
+                                <option value="<?php echo $depto['ID']; ?>"><?php echo $depto['Nombre']; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="proveedor" class="form-label">Proveedor *</label>
+                        <select class="form-select" id="proveedor" name="proveedor" required>
+                            <option value="">Seleccionar proveedor...</option>
+                            <?php while ($proveedor = $proveedorStmt->fetch(PDO::FETCH_ASSOC)): ?>
+                                <option value="<?php echo $proveedor['ID']; ?>"><?php echo $proveedor['Nombre']; ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
                         <label for="edificio" class="form-label">Edificio *</label>
                         <select class="form-select" id="edificio" name="edificio" required>
                             <option value="">Seleccionar edificio...</option>
-                            <?php while ($edificio = $edificioStmt->fetch(PDO::FETCH_ASSOC)): ?>
+                            <?php foreach ($edificios as $edificio): ?>
                                 <option value="<?php echo $edificio['ID']; ?>"><?php echo $edificio['Nombre']; ?></option>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="col-md-6">
@@ -143,15 +301,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="">Seleccionar encargado...</option>
                             <?php while ($empleado = $empleadoStmt->fetch(PDO::FETCH_ASSOC)): ?>
                                 <option value="<?php echo $empleado['ID']; ?>"><?php echo $empleado['Nombre']; ?></option>
-                            <?php endwhile; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="proveedor" class="form-label">Proveedor *</label>
-                        <select class="form-select" id="proveedor" name="proveedor" required>
-                            <option value="">Seleccionar proveedor...</option>
-                            <?php while ($proveedor = $proveedorStmt->fetch(PDO::FETCH_ASSOC)): ?>
-                                <option value="<?php echo $proveedor['ID']; ?>"><?php echo $proveedor['Nombre']; ?></option>
                             <?php endwhile; ?>
                         </select>
                     </div>
