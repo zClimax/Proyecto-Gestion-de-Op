@@ -8,6 +8,9 @@ check_permission('gestionar_ci');
 // Incluir configuración de base de datos
 require_once '../../config/database.php';
 
+// Incluir modelo de componentes
+require_once '../../models/CIComponente.php';
+
 // Verificar si se proporcionó el ID
 if (!isset($_GET['id']) || empty($_GET['id'])) {
     // Redireccionar a la lista
@@ -17,9 +20,23 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 
 $ci_id = $_GET['id'];
 
+// Incluir modelo de componentes - DESPUÉS de definir $conn y $ci_id
+require_once '../../models/CIComponente.php';
+
 // Conexión a la base de datos
 $database = new Database();
 $conn = $database->getConnection();
+
+
+// Obtener componentes asociados al CI
+$ciComponente = new CIComponente($conn);
+$componentesHWStmt = $ciComponente->getComponentesByCiYTipo($ci_id, 'HW');
+$componentesSWStmt = $ciComponente->getComponentesByCiYTipo($ci_id, 'SW');
+
+// Obtener todos los componentes en arrays
+$componentesHW = $componentesHWStmt->fetchAll(PDO::FETCH_ASSOC);
+$componentesSW = $componentesSWStmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 // Obtener datos completos del CI
 try {
@@ -502,6 +519,146 @@ try {
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
                         No hay incidencias registradas para este elemento.
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php
+
+// Reiniciar los punteros de las consultas para poder usarlos nuevamente
+$componentesHWStmt->execute([$ci_id, 'HW']);
+$componentesSWStmt->execute([$ci_id, 'SW']);
+?>
+<!-- Componentes de Hardware -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Componentes de Hardware</h5>
+            </div>
+            <div class="card-body">
+                <?php
+                $hayComponentes = false;
+                if (isset($componentesHWStmt) && $componentesHWStmt->rowCount() > 0) {
+                    $hayComponentes = true;
+                } elseif (isset($componentesHW) && count($componentesHW) > 0) {
+                    $hayComponentes = true;
+                }
+                ?>
+
+                <?php if ($hayComponentes): ?>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Componente</th>
+                                    <th>Categoría</th>
+                                    <th>Fabricante</th>
+                                    <th>Modelo</th>
+                                    <th>Cantidad</th>
+                                    <th>Notas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (isset($componentesHWStmt) && $componentesHWStmt->rowCount() > 0): ?>
+                                    <?php while ($componente = $componentesHWStmt->fetch(PDO::FETCH_ASSOC)): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($componente['Nombre']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Categoria']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Fabricante']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Modelo']); ?></td>
+                                            <td><?php echo $componente['Cantidad']; ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Notas']); ?></td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php elseif (isset($componentesHW) && count($componentesHW) > 0): ?>
+                                    <?php foreach ($componentesHW as $componente): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($componente['Nombre']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Categoria']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Fabricante']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Modelo']); ?></td>
+                                            <td><?php echo $componente['Cantidad']; ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Notas']); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        No hay componentes de hardware registrados para este elemento.
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Software Instalado -->
+<!-- Software Instalado -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Software Instalado</h5>
+            </div>
+            <div class="card-body">
+                <?php
+                $haySoftware = false;
+                if (isset($componentesSWStmt) && $componentesSWStmt->rowCount() > 0) {
+                    $haySoftware = true;
+                } elseif (isset($componentesSW) && count($componentesSW) > 0) {
+                    $haySoftware = true;
+                }
+                ?>
+
+                <?php if ($haySoftware): ?>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Software</th>
+                                    <th>Categoría</th>
+                                    <th>Fabricante</th>
+                                    <th>Versión</th>
+                                    <th>Notas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (isset($componentesSWStmt) && $componentesSWStmt->rowCount() > 0): ?>
+                                    <?php while ($componente = $componentesSWStmt->fetch(PDO::FETCH_ASSOC)): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($componente['Nombre']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Categoria']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Fabricante']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Modelo']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Notas']); ?></td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php elseif (isset($componentesSW) && count($componentesSW) > 0): ?>
+                                    <?php foreach ($componentesSW as $componente): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($componente['Nombre']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Categoria']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Fabricante']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Modelo']); ?></td>
+                                            <td><?php echo htmlspecialchars($componente['Notas']); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        No hay software registrado para este elemento.
                     </div>
                 <?php endif; ?>
             </div>
