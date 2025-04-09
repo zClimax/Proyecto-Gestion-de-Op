@@ -2,8 +2,8 @@
 // Incluir el encabezado
 require_once '../../includes/header.php';
 
-// Verificar permiso de gestión de incidencias
-check_permission('gestionar_incidencias');
+// Verificar permiso de reportar incidencias
+check_permission('reportar_incidencia');
 
 // Incluir configuración de base de datos
 require_once '../../config/database.php';
@@ -24,16 +24,14 @@ $conn = $database->getConnection();
 $query = "SELECT i.ID, i.Descripcion, i.FechaInicio, i.FechaTerminacion, 
                  i.ID_Prioridad, i.ID_CI, i.ID_Tecnico, i.ID_Stat, i.CreatedBy,
                  p.Descripcion as Prioridad, s.Descripcion as Estado,
-                 ci.Nombre as CI_Nombre, ci.NumSerie as CI_NumSerie, t.Nombre as CI_Tipo,
-                 u.Username as Reportado_Por, emp.Nombre as Reportado_Por_Nombre,
-                 emp.Email as Reportado_Por_Email
+                 ci.Nombre as CI_Nombre, t.Nombre as CI_Tipo,
+                 e.Nombre as Tecnico_Nombre, e.Email as Tecnico_Email
           FROM INCIDENCIA i
           LEFT JOIN PRIORIDAD p ON i.ID_Prioridad = p.ID
           LEFT JOIN ESTATUS_INCIDENCIA s ON i.ID_Stat = s.ID
           LEFT JOIN CI ci ON i.ID_CI = ci.ID
           LEFT JOIN TIPO_CI t ON ci.ID_TipoCI = t.ID
-          LEFT JOIN USUARIO u ON i.CreatedBy = u.ID
-          LEFT JOIN EMPLEADO emp ON u.ID_Empleado = emp.ID
+          LEFT JOIN EMPLEADO e ON i.ID_Tecnico = e.ID
           WHERE i.ID = ?";
 
 $stmt = $conn->prepare($query);
@@ -47,82 +45,97 @@ if ($stmt->rowCount() == 0) {
 
 $incidencia = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Verificar si la incidencia está asignada al técnico actual (o es administrador)
-if ($incidencia['ID_Tecnico'] != $_SESSION['empleado_id'] && !has_permission('admin')) {
+// Verificar si la incidencia fue reportada por el usuario actual
+if ($incidencia['CreatedBy'] != $_SESSION['user_id']) {
     header("Location: mis-incidencias.php?error=permission_denied");
     exit;
 }
 
-// Obtener comentarios y seguimiento de la incidencia
-$query_comentarios = "SELECT c.ID, c.Comentario, c.TipoComentario, c.FechaRegistro, 
-                             c.Publico, u.Username, e.Nombre as NombreEmpleado
-                      FROM INCIDENCIA_COMENTARIO c
-                      LEFT JOIN USUARIO u ON c.ID_Usuario = u.ID
-                      LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
-                      WHERE c.ID_Incidencia = ?
-                      ORDER BY c.FechaRegistro ASC";
-$stmt_comentarios = $conn->prepare($query_comentarios);
-$stmt_comentarios->execute([$incidencia_id]);
-
-// Obtener historial de estados
-$query_historial = "SELECT h.ID, h.ID_EstadoAnterior, h.ID_EstadoNuevo, h.FechaCambio,
-                           s1.Descripcion as EstadoAnterior, s2.Descripcion as EstadoNuevo,
-                           u.Username, e.Nombre as NombreEmpleado
-                    FROM INCIDENCIA_HISTORIAL h
-                    LEFT JOIN ESTATUS_INCIDENCIA s1 ON h.ID_EstadoAnterior = s1.ID
-                    LEFT JOIN ESTATUS_INCIDENCIA s2 ON h.ID_EstadoNuevo = s2.ID
-                    LEFT JOIN USUARIO u ON h.ID_Usuario = u.ID
-                    LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
-                    WHERE h.ID_Incidencia = ?
-                    ORDER BY h.FechaCambio ASC";
-$stmt_historial = $conn->prepare($query_historial);
-$stmt_historial->execute([$incidencia_id]);
-
-// Obtener respuestas a preguntas de control
-$query_respuestas = "SELECT r.ID, r.Respuesta, r.FechaRegistro, p.Pregunta, p.Tipo
-                    FROM CONTROL_RESPUESTA r
-                    JOIN CONTROL_PREGUNTA p ON r.ID_Pregunta = p.ID
-                    WHERE r.ID_Incidencia = ?
-                    ORDER BY p.Orden";
-$stmt_respuestas = $conn->prepare($query_respuestas);
-$stmt_respuestas->execute([$incidencia_id]);
-
-// Obtener solución si existe
-$query_solucion = "SELECT s.ID, s.Descripcion, s.FechaRegistro, e.Nombre as Tecnico
-                  FROM INCIDENCIA_SOLUCION s
-                  LEFT JOIN USUARIO u ON s.ID_Usuario = u.ID
-                  LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
-                  WHERE s.ID_Incidencia = ?
-                  ORDER BY s.FechaRegistro DESC";
-$stmt_solucion = $conn->prepare($query_solucion);
-$stmt_solucion->execute([$incidencia_id]);
-$solucion = $stmt_solucion->fetch(PDO::FETCH_ASSOC);
-
-// Obtener la evaluación si existe y el estado es 'Cerrada'
+// Comprobar si la tabla de comentarios existe antes de consultarla
+$comentarios = [];
+$historiales = [];
+$solucion = null;
 $evaluacion = null;
-if ($incidencia['ID_Stat'] == 6) { // 6 = Cerrada
-    $query_evaluacion = "SELECT e.ID, e.Calificacion, e.Comentario, e.FechaRegistro
-                        FROM INCIDENCIA_EVALUACION e
-                        WHERE e.ID_Incidencia = ?";
-    $stmt_evaluacion = $conn->prepare($query_evaluacion);
-    $stmt_evaluacion->execute([$incidencia_id]);
-    if ($stmt_evaluacion->rowCount() > 0) {
-        $evaluacion = $stmt_evaluacion->fetch(PDO::FETCH_ASSOC);
+
+// Verificar si existe la tabla INCIDENCIA_COMENTARIO
+$check_table_query = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'INCIDENCIA_COMENTARIO'";
+$check_table_stmt = $conn->prepare($check_table_query);
+$check_table_stmt->execute();
+$table_exists = ($check_table_stmt->rowCount() > 0);
+
+if ($table_exists) {
+    // Obtener comentarios públicos de la incidencia
+    $query_comentarios = "SELECT c.ID, c.Comentario, c.TipoComentario, c.FechaRegistro, 
+                               u.Username, e.Nombre as NombreEmpleado
+                        FROM INCIDENCIA_COMENTARIO c
+                        LEFT JOIN USUARIO u ON c.ID_Usuario = u.ID
+                        LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
+                        WHERE c.ID_Incidencia = ? AND c.Publico = 1
+                        ORDER BY c.FechaRegistro ASC";
+    $stmt_comentarios = $conn->prepare($query_comentarios);
+    $stmt_comentarios->execute([$incidencia_id]);
+    $comentarios = $stmt_comentarios->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Obtener solución si existe
+    $query_solucion = "SELECT s.ID, s.Descripcion, s.FechaRegistro, e.Nombre as Tecnico
+                     FROM INCIDENCIA_SOLUCION s
+                     LEFT JOIN USUARIO u ON s.ID_Usuario = u.ID
+                     LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
+                     WHERE s.ID_Incidencia = ?
+                     ORDER BY s.FechaRegistro DESC";
+    $stmt_solucion = $conn->prepare($query_solucion);
+    $stmt_solucion->execute([$incidencia_id]);
+    if ($stmt_solucion->rowCount() > 0) {
+        $solucion = $stmt_solucion->fetch(PDO::FETCH_ASSOC);
+    }
+    
+    // Obtener la evaluación si existe y el estado es 'Cerrada'
+    if ($incidencia['ID_Stat'] == 6) { // 6 = Cerrada
+        $query_evaluacion = "SELECT e.ID, e.Calificacion, e.Comentario, e.FechaRegistro
+                           FROM INCIDENCIA_EVALUACION e
+                           WHERE e.ID_Incidencia = ?";
+        $stmt_evaluacion = $conn->prepare($query_evaluacion);
+        $stmt_evaluacion->execute([$incidencia_id]);
+        if ($stmt_evaluacion->rowCount() > 0) {
+            $evaluacion = $stmt_evaluacion->fetch(PDO::FETCH_ASSOC);
+        }
     }
 }
 
-// Procesar el formulario de comentario si se envía
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'agregar_comentario') {
+// Verificar si existe la tabla INCIDENCIA_HISTORIAL
+$check_historial_table_query = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'INCIDENCIA_HISTORIAL'";
+$check_historial_table_stmt = $conn->prepare($check_historial_table_query);
+$check_historial_table_stmt->execute();
+$historial_table_exists = ($check_historial_table_stmt->rowCount() > 0);
+
+if ($historial_table_exists) {
+    // Obtener historial de estados
+    $query_historial = "SELECT h.ID, h.ID_EstadoAnterior, h.ID_EstadoNuevo, h.FechaCambio,
+                             s1.Descripcion as EstadoAnterior, s2.Descripcion as EstadoNuevo,
+                             e.Nombre as NombreEmpleado
+                      FROM INCIDENCIA_HISTORIAL h
+                      LEFT JOIN ESTATUS_INCIDENCIA s1 ON h.ID_EstadoAnterior = s1.ID
+                      LEFT JOIN ESTATUS_INCIDENCIA s2 ON h.ID_EstadoNuevo = s2.ID
+                      LEFT JOIN USUARIO u ON h.ID_Usuario = u.ID
+                      LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
+                      WHERE h.ID_Incidencia = ?
+                      ORDER BY h.FechaCambio ASC";
+    $stmt_historial = $conn->prepare($query_historial);
+    $stmt_historial->execute([$incidencia_id]);
+    $historiales = $stmt_historial->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Procesar el formulario de comentario si se envía y la tabla de comentarios existe
+if ($table_exists && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'agregar_comentario') {
     try {
         $comentario = $_POST['comentario'];
-        $publico = isset($_POST['publico']) ? 1 : 0;
         
         if (!empty($comentario)) {
             $query_insert = "INSERT INTO INCIDENCIA_COMENTARIO (ID_Incidencia, ID_Usuario, Comentario, TipoComentario, FechaRegistro, Publico) 
-                            VALUES (?, ?, ?, 'COMENTARIO', GETDATE(), ?)";
+                            VALUES (?, ?, ?, 'COMENTARIO', GETDATE(), 1)";
             $stmt_insert = $conn->prepare($query_insert);
             
-            if ($stmt_insert->execute([$incidencia_id, $_SESSION['user_id'], $comentario, $publico])) {
+            if ($stmt_insert->execute([$incidencia_id, $_SESSION['user_id'], $comentario])) {
                 header("Location: ver-incidencia.php?id=$incidencia_id&success=comment_added");
                 exit;
             } else {
@@ -147,19 +160,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <i class="fas fa-arrow-left me-2"></i>Volver a mis incidencias
         </a>
         
-        <?php if (in_array($incidencia['ID_Stat'], [1, 2, 3, 4, 5])): // No mostrar si está cerrada ?>
-        <a href="actualizar-incidencia.php?id=<?php echo $incidencia_id; ?>" class="btn btn-primary ms-2">
-            <i class="fas fa-edit me-2"></i>Actualizar Estado
+        <?php if ($incidencia['ID_Stat'] == 5): // 5 = Resuelta ?>
+        <a href="liberar-incidencia.php?id=<?php echo $incidencia_id; ?>" class="btn btn-success ms-2">
+            <i class="fas fa-check-circle me-2"></i>Liberar Incidencia
+        </a>
+        <?php endif; ?>
+        
+        <?php if ($incidencia['ID_Stat'] == 5 || ($incidencia['ID_Stat'] == 6 && !$evaluacion)): // 5 = Resuelta, 6 = Cerrada sin evaluación ?>
+        <a href="evaluar-incidencia.php?id=<?php echo $incidencia_id; ?>" class="btn btn-primary ms-2">
+            <i class="fas fa-star me-2"></i>Evaluar Resolución
         </a>
         <?php endif; ?>
     </div>
 </div>
-
-<?php if (isset($_GET['success']) && $_GET['success'] == 'updated'): ?>
-    <div class="alert alert-success">
-        <i class="fas fa-check-circle me-2"></i>La incidencia se ha actualizado correctamente.
-    </div>
-<?php endif; ?>
 
 <?php if (isset($_GET['success']) && $_GET['success'] == 'comment_added'): ?>
     <div class="alert alert-success">
@@ -167,9 +180,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     </div>
 <?php endif; ?>
 
-<?php if (isset($error)): ?>
+<?php if (isset($_GET['error'])): ?>
     <div class="alert alert-danger">
-        <i class="fas fa-exclamation-circle me-2"></i><?php echo $error; ?>
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <?php 
+        $error_type = $_GET['error'];
+        switch ($error_type) {
+            case 'not_resolved':
+                echo 'La incidencia aún no está resuelta.';
+                break;
+            case 'already_evaluated':
+                echo 'Esta incidencia ya ha sido evaluada.';
+                break;
+            default:
+                echo isset($error) ? $error : 'Ha ocurrido un error.';
+        }
+        ?>
     </div>
 <?php endif; ?>
 
@@ -241,26 +267,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <?php echo htmlspecialchars($incidencia['CI_Nombre']); ?>
                                 </td>
                             </tr>
-                            <tr>
-                                <th>Num. Serie:</th>
-                                <td><?php echo htmlspecialchars($incidencia['CI_NumSerie']); ?></td>
-                            </tr>
                         </table>
                     </div>
                     <div class="col-md-6">
                         <table class="table table-borderless">
                             <tr>
-                                <th class="w-25">Reportado por:</th>
-                                <td>
-                                    <?php echo htmlspecialchars($incidencia['Reportado_Por_Nombre']); ?>
-                                    <?php if ($incidencia['Reportado_Por_Email']): ?>
-                                        <br><small><a href="mailto:<?php echo htmlspecialchars($incidencia['Reportado_Por_Email']); ?>"><?php echo htmlspecialchars($incidencia['Reportado_Por_Email']); ?></a></small>
-                                    <?php endif; ?>
-                                </td>
+                                <th class="w-25">Fecha de reporte:</th>
+                                <td><?php echo date('d/m/Y H:i', strtotime($incidencia['FechaInicio'])); ?></td>
                             </tr>
                             <tr>
-                                <th>Fecha de reporte:</th>
-                                <td><?php echo date('d/m/Y H:i', strtotime($incidencia['FechaInicio'])); ?></td>
+                                <th>Técnico asignado:</th>
+                                <td>
+                                    <?php if ($incidencia['Tecnico_Nombre']): ?>
+                                        <?php echo htmlspecialchars($incidencia['Tecnico_Nombre']); ?>
+                                        <?php if (isset($incidencia['Tecnico_Email']) && $incidencia['Tecnico_Email']): ?>
+                                            <br><small><a href="mailto:<?php echo htmlspecialchars($incidencia['Tecnico_Email']); ?>"><?php echo htmlspecialchars($incidencia['Tecnico_Email']); ?></a></small>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span class="text-muted">Sin asignar</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                             <tr>
                                 <th>Tiempo transcurrido:</th>
@@ -299,64 +325,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         </table>
                     </div>
                 </div>
-                
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <h6>Descripción del problema:</h6>
-                        <p><?php echo nl2br(htmlspecialchars($incidencia['Descripcion'])); ?></p>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Preguntas de Control -->
-<?php if ($stmt_respuestas->rowCount() > 0): ?>
+<!-- Descripción del problema -->
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Preguntas de Control</h5>
+                <h5 class="mb-0">Descripción del Problema</h5>
             </div>
             <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Pregunta</th>
-                                <th>Respuesta</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php while ($respuesta = $stmt_respuestas->fetch(PDO::FETCH_ASSOC)): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($respuesta['Pregunta']); ?></td>
-                                    <td>
-                                        <?php 
-                                        if ($respuesta['Tipo'] == 'SI_NO') {
-                                            if ($respuesta['Respuesta'] == 'SI') {
-                                                echo '<span class="badge bg-success">Sí</span>';
-                                            } else {
-                                                echo '<span class="badge bg-danger">No</span>';
-                                            }
-                                        } else {
-                                            echo htmlspecialchars($respuesta['Respuesta']);
-                                        }
-                                        ?>
-                                    </td>
-                                </tr>
-                            <?php endwhile; ?>
-                        </tbody>
-                    </table>
-                </div>
+                <?php
+                // Procesar la descripción para extraer la información adicional
+                $descripcion_completa = $incidencia['Descripcion'];
+                $partes = explode("Información adicional:", $descripcion_completa);
+                
+                $descripcion_principal = isset($partes[0]) ? trim($partes[0]) : $descripcion_completa;
+                $info_adicional = isset($partes[1]) ? trim($partes[1]) : '';
+                
+                // Mostrar la descripción principal
+                echo '<div class="mb-4">';
+                echo '<h6>Descripción del problema:</h6>';
+                echo '<p>' . nl2br(htmlspecialchars($descripcion_principal)) . '</p>';
+                echo '</div>';
+                
+                // Si hay información adicional, mostrarla como una tabla
+                if (!empty($info_adicional)) {
+                    echo '<div class="mb-4">';
+                    echo '<h6>Información adicional:</h6>';
+                    echo '<div class="table-responsive">';
+                    echo '<table class="table table-striped">';
+                    
+                    // Procesar cada línea de información adicional
+                    $lineas = explode("\n", $info_adicional);
+                    foreach ($lineas as $linea) {
+                        $linea = trim($linea);
+                        if (empty($linea)) continue;
+                        
+                        if (strpos($linea, '- ') === 0) {
+                            $linea = substr($linea, 2); // Quitar el guión inicial
+                        }
+                        
+                        $datos = explode(':', $linea, 2);
+                        if (count($datos) >= 2) {
+                            $clave = trim($datos[0]);
+                            $valor = trim($datos[1]);
+                            
+                            echo '<tr>';
+                            echo '<th width="30%">' . htmlspecialchars($clave) . '</th>';
+                            echo '<td>' . htmlspecialchars($valor) . '</td>';
+                            echo '</tr>';
+                        } else {
+                            echo '<tr><td colspan="2">' . htmlspecialchars($linea) . '</td></tr>';
+                        }
+                    }
+                    
+                    echo '</table>';
+                    echo '</div>';
+                    echo '</div>';
+                }
+                ?>
             </div>
         </div>
     </div>
 </div>
-<?php endif; ?>
 
-<!-- Solución -->
+<?php if ($table_exists): ?>
+
+<!-- Solución aplicada (si existe) -->
 <?php if ($solucion): ?>
 <div class="row">
     <div class="col-12">
@@ -377,27 +416,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 </div>
 <?php endif; ?>
 
+<!-- Evaluación del Servicio (si existe) -->
+<?php if ($evaluacion): ?>
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Su Evaluación del Servicio</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Calificación:</h6>
+                        <div class="rating">
+                            <?php
+                            $calificacion = intval($evaluacion['Calificacion']);
+                            for ($i = 1; $i <= 5; $i++) {
+                                if ($i <= $calificacion) {
+                                    echo '<i class="fas fa-star text-warning"></i>';
+                                } else {
+                                    echo '<i class="far fa-star text-warning"></i>';
+                                }
+                            }
+                            ?>
+                            <span class="badge bg-primary ms-2"><?php echo $calificacion; ?> de 5</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Fecha de evaluación:</h6>
+                        <p><?php echo date('d/m/Y H:i', strtotime($evaluacion['FechaRegistro'])); ?></p>
+                    </div>
+                </div>
+                
+                <?php if (!empty($evaluacion['Comentario'])): ?>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Sus comentarios:</h6>
+                        <p><?php echo nl2br(htmlspecialchars($evaluacion['Comentario'])); ?></p>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Comentarios y Seguimiento -->
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
                 <h5 class="mb-0">Comentarios y Seguimiento</h5>
             </div>
             <div class="card-body">
-                <?php if ($stmt_comentarios->rowCount() > 0): ?>
+                <?php if (!empty($comentarios)): ?>
                     <div class="comentarios-container">
-                        <?php while ($comentario = $stmt_comentarios->fetch(PDO::FETCH_ASSOC)): ?>
-                            <div class="comentario <?php echo $comentario['ID_Usuario'] == $_SESSION['user_id'] ? 'comentario-propio' : ''; ?> mb-3">
+                        <?php foreach ($comentarios as $comentario): ?>
+                            <div class="comentario <?php echo $comentario['Username'] == $_SESSION['username'] ? 'comentario-propio' : ''; ?> mb-3">
                                 <div class="card">
                                     <div class="card-header d-flex justify-content-between align-items-center">
                                         <span>
                                             <strong><?php echo htmlspecialchars($comentario['NombreEmpleado']); ?></strong>
                                             <?php if ($comentario['TipoComentario'] !== 'COMENTARIO'): ?>
                                                 <span class="badge bg-info"><?php echo htmlspecialchars($comentario['TipoComentario']); ?></span>
-                                            <?php endif; ?>
-                                            <?php if ($comentario['Publico'] == 0): ?>
-                                                <span class="badge bg-warning text-dark">Privado</span>
                                             <?php endif; ?>
                                         </span>
                                         <small class="text-muted"><?php echo date('d/m/Y H:i', strtotime($comentario['FechaRegistro'])); ?></small>
@@ -407,28 +489,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     </div>
                                 </div>
                             </div>
-                        <?php endwhile; ?>
+                        <?php endforeach; ?>
                     </div>
                 <?php else: ?>
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        No hay comentarios registrados para esta incidencia.
+                        <?php if (!$table_exists): ?>
+                            El sistema de comentarios aún no está disponible.
+                        <?php else: ?>
+                            No hay comentarios registrados para esta incidencia.
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
                 
-                <!-- Formulario para agregar comentarios -->
-                <?php if (in_array($incidencia['ID_Stat'], [1, 2, 3, 4, 5])): // No permitir comentarios en incidencias cerradas ?>
+                <!-- Formulario para agregar comentarios (solo si no está cerrada y la tabla existe) -->
+                <?php if ($table_exists && $incidencia['ID_Stat'] != 6): // No permitir comentarios en incidencias cerradas ?>
                 <div class="mt-4">
                     <h6>Agregar Comentario</h6>
                     <form action="" method="POST">
                         <input type="hidden" name="action" value="agregar_comentario">
                         <div class="mb-3">
                             <textarea class="form-control" name="comentario" id="comentario" rows="3" required placeholder="Escriba su comentario aquí..."></textarea>
-                        </div>
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" name="publico" id="publico" value="1" checked>
-                            <label class="form-check-label" for="publico">Visible para el usuario</label>
-                            <small class="form-text text-muted d-block">Desmarque esta opción si el comentario es solo para el equipo técnico.</small>
                         </div>
                         <button type="submit" class="btn btn-primary">Enviar Comentario</button>
                     </form>
@@ -440,7 +521,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 </div>
 
 <!-- Historial de Estados -->
-<?php if ($stmt_historial->rowCount() > 0): ?>
+<?php if (!empty($historiales)): ?>
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
@@ -459,7 +540,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </tr>
                         </thead>
                         <tbody>
-                            <?php while ($historial = $stmt_historial->fetch(PDO::FETCH_ASSOC)): ?>
+                            <?php foreach ($historiales as $historial): ?>
                                 <tr>
                                     <td><?php echo date('d/m/Y H:i', strtotime($historial['FechaCambio'])); ?></td>
                                     <td>
@@ -493,7 +574,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     </td>
                                     <td><?php echo htmlspecialchars($historial['NombreEmpleado']); ?></td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -503,51 +584,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 </div>
 <?php endif; ?>
 
-<!-- Evaluación del Servicio -->
-<?php if ($evaluacion): ?>
-<div class="row">
-    <div class="col-12">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Evaluación del Servicio</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Calificación:</h6>
-                        <div class="rating">
-                            <?php
-                            $calificacion = intval($evaluacion['Calificacion']);
-                            for ($i = 1; $i <= 5; $i++) {
-                                if ($i <= $calificacion) {
-                                    echo '<i class="fas fa-star text-warning"></i>';
-                                } else {
-                                    echo '<i class="far fa-star text-warning"></i>';
-                                }
-                            }
-                            ?>
-                            <span class="badge bg-primary ms-2"><?php echo $calificacion; ?> de 5</span>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Fecha de evaluación:</h6>
-                        <p><?php echo date('d/m/Y H:i', strtotime($evaluacion['FechaRegistro'])); ?></p>
-                    </div>
-                </div>
-                
-                <?php if (!empty($evaluacion['Comentario'])): ?>
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <h6>Comentarios del usuario:</h6>
-                        <p><?php echo nl2br(htmlspecialchars($evaluacion['Comentario'])); ?></p>
-                    </div>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
+<?php endif; // fin del bloque if ($table_exists) ?>
 
 <style>
 .comentario-propio .card {

@@ -65,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Por favor complete todos los campos obligatorios.";
         } else {
             // Insertar la incidencia sin usar transacciones
-            // Insertar la incidencia
             $query = "INSERT INTO INCIDENCIA (Descripcion, FechaInicio, ID_Prioridad, ID_CI, ID_Stat, CreatedBy, CreatedDate) 
                       VALUES (?, GETDATE(), ?, ?, 1, ?, GETDATE())";
             $stmt = $conn->prepare($query);
@@ -114,7 +113,7 @@ $preguntas = $stmt_preguntas->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!-- Título de la página -->
-<h1 class="h2">Reportar Nueva Incidencia</h1>
+<h1 class="h2">Reportar Incidencia</h1>
 
 <!-- Formulario para reportar incidencia -->
 <div class="row">
