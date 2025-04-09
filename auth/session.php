@@ -31,6 +31,11 @@ function check_permission($permission) {
 
 // Determina si mostrar un elemento de menú basado en permisos
 function has_permission($permission) {
+    // Inicia la sesión si no está iniciada
+    if (session_status() == PHP_SESSION_NONE) {
+        session_start();
+    }
+    
     if (!isset($_SESSION['permisos'][$permission])) {
         return false;
     }
@@ -39,10 +44,20 @@ function has_permission($permission) {
 
 // Obtiene el nombre del rol actual
 function get_role_name() {
+    // Inicia la sesión si no está iniciada
+    if (session_status() == PHP_SESSION_NONE) {
+        session_start();
+    }
+    
     return $_SESSION['role_name'] ?? 'Desconocido';
 }
 
 // Obtiene el nombre completo del usuario
 function get_user_name() {
+    // Inicia la sesión si no está iniciada
+    if (session_status() == PHP_SESSION_NONE) {
+        session_start();
+    }
+    
     return $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Usuario';
 }

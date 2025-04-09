@@ -31,6 +31,9 @@ class Usuario {
      * @return boolean True si las credenciales son correctas, False en caso contrario
      */
     public function login($username, $password) {
+        // Log de inicio de intento de login
+        error_log("Intentando login: Username = $username");
+    
         // Query para verificar si existe el usuario
         $query = "SELECT u.ID, u.Username, u.Password, u.UltimoAcceso, u.Estado, 
                          u.ID_Empleado, u.ID_Rol, r.Nombre as rol_nombre, e.Nombre as empleado_nombre,
@@ -38,7 +41,7 @@ class Usuario {
                   FROM " . $this->table_name . " u 
                   INNER JOIN ROL r ON u.ID_Rol = r.ID
                   INNER JOIN EMPLEADO e ON u.ID_Empleado = e.ID
-                  WHERE u.Username = ? AND u.Estado = 1";
+                  WHERE u.Username = ?";
         
         // Preparar la consulta
         $stmt = $this->conn->prepare($query);
@@ -46,34 +49,49 @@ class Usuario {
         // Vincular parámetros
         $stmt->execute([$username]);
         
-        // Verificar si se encontró el usuario
-        if($stmt->rowCount() > 0) {
-            // Obtener los detalles del usuario
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            // Verificar la contraseña (para proyecto escolar, simplemente comparamos)
-            // En un entorno real, usaríamos password_verify()
-            if($password == $row['Password']) {
-                // Asignar valores a las propiedades del objeto
-                $this->id = $row['ID'];
-                $this->username = $row['Username'];
-                $this->password = $row['Password'];
-                $this->ultimo_acceso = $row['UltimoAcceso'];
-                $this->estado = $row['Estado'];
-                $this->id_empleado = $row['ID_Empleado'];
-                $this->id_rol = $row['ID_Rol'];
-                $this->nombre_rol = $row['rol_nombre'];
-                $this->nombre_empleado = $row['empleado_nombre'];
-                $this->email_empleado = $row['empleado_email'];
-                
-                // Actualizar último acceso
-                $this->update_last_login();
-                
-                return true;
-            }
+        // Obtener los detalles del usuario
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Log de información del usuario encontrado
+        if ($row) {
+            error_log("Usuario encontrado - ID: {$row['ID']}, Username: {$row['Username']}, Estado: {$row['Estado']}");
+            error_log("Password en BD: {$row['Password']}, Password ingresada: $password");
+        } else {
+            error_log("Usuario NO encontrado para: $username");
+            return false;
+        }
+    
+        // Verificar estado del usuario
+        if($row['Estado'] != 1) {
+            error_log("Login fallido: Usuario inactivo");
+            return false;
         }
         
-        return false;
+        // Verificar la contraseña 
+        if($password === $row['Password']) {  // Usar === para comparación estricta
+            // Asignar valores a las propiedades del objeto
+            $this->id = $row['ID'];
+            $this->username = $row['Username'];
+            $this->password = $row['Password'];
+            $this->ultimo_acceso = $row['UltimoAcceso'];
+            $this->estado = $row['Estado'];
+            $this->id_empleado = $row['ID_Empleado'];
+            $this->id_rol = $row['ID_Rol'];
+            $this->nombre_rol = $row['rol_nombre'];
+            $this->nombre_empleado = $row['empleado_nombre'];
+            $this->email_empleado = $row['empleado_email'];
+            
+            // Log de login exitoso
+            error_log("Login EXITOSO para usuario: {$this->username}");
+            
+            // Actualizar último acceso
+            $this->update_last_login();
+            
+            return true;
+        } else {
+            error_log("Login FALLIDO: Contraseña incorrecta");
+            return false;
+        }
     }
     
     /**

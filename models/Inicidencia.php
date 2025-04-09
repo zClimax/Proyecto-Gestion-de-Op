@@ -161,25 +161,39 @@ class Incidencia {
     
     /**
      * Crear una nueva incidencia
-     * @return boolean True si se creó correctamente
+     * @return mixed ID de la incidencia creada o false en caso de error
      */
     public function create() {
         $query = "INSERT INTO " . $this->table_name . " 
                   (Descripcion, FechaInicio, ID_Prioridad, ID_CI, ID_Tecnico, ID_Stat, CreatedBy, CreatedDate) 
-                  VALUES (?, GETDATE(), ?, ?, ?, ?, ?, GETDATE())";
+                  VALUES (?, GETDATE(), ?, ?, ?, ?, ?, GETDATE()); SELECT SCOPE_IDENTITY() as ID;";
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
-        
-        // Ejecutar la consulta
-        return $stmt->execute([
-            $this->descripcion,
-            $this->id_prioridad,
-            $this->id_ci,
-            $this->id_tecnico,
-            $this->id_stat,
-            $this->created_by
-        ]);
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            $stmt->execute([
+                $this->descripcion,
+                $this->id_prioridad,
+                $this->id_ci,
+                $this->id_tecnico,
+                $this->id_stat,
+                $this->created_by
+            ]);
+            
+            // Obtener el ID de la incidencia creada
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                return $row['ID'];
+            }
+            
+            return $this->conn->lastInsertId();
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::create(): " . $e->getMessage());
+            return false;
+        }
     }
     
     /**
@@ -201,22 +215,28 @@ class Incidencia {
                       WHERE ID = ?";
         }
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
-        
-        // Parámetros a ejecutar
-        $params = [
-            $this->descripcion,
-            $this->id_prioridad,
-            $this->id_ci,
-            $this->id_tecnico,
-            $this->id_stat,
-            $this->modified_by,
-            $this->id
-        ];
-        
-        // Ejecutar la consulta
-        return $stmt->execute($params);
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Parámetros a ejecutar
+            $params = [
+                $this->descripcion,
+                $this->id_prioridad,
+                $this->id_ci,
+                $this->id_tecnico,
+                $this->id_stat,
+                $this->modified_by,
+                $this->id
+            ];
+            
+            // Ejecutar la consulta
+            return $stmt->execute($params);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::update(): " . $e->getMessage());
+            return false;
+        }
     }
     
     /**
@@ -239,11 +259,17 @@ class Incidencia {
                       WHERE ID = ?";
         }
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
-        
-        // Ejecutar la consulta
-        return $stmt->execute([$id_stat, $modified_by, $id]);
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            return $stmt->execute([$id_stat, $modified_by, $id]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::cambiarEstado(): " . $e->getMessage());
+            return false;
+        }
     }
     
     /**
@@ -258,11 +284,17 @@ class Incidencia {
                   SET ID_Tecnico = ?, ID_Stat = 2, ModifiedBy = ?, ModifiedDate = GETDATE() 
                   WHERE ID = ?";
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
-        
-        // Ejecutar la consulta (2 = Asignada)
-        return $stmt->execute([$id_tecnico, $modified_by, $id]);
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta (2 = Asignada)
+            return $stmt->execute([$id_tecnico, $modified_by, $id]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::asignarTecnico(): " . $e->getMessage());
+            return false;
+        }
     }
     
     /**
@@ -271,13 +303,52 @@ class Incidencia {
      * @return boolean True si se eliminó correctamente
      */
     public function delete($id) {
-        $query = "DELETE FROM " . $this->table_name . " WHERE ID = ?";
-        
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
-        
-        // Ejecutar la consulta
-        return $stmt->execute([$id]);
+        try {
+            // Comenzar transacción para eliminar la incidencia y sus relaciones
+            $this->conn->beginTransaction();
+            
+            // Eliminar registros relacionados en CONTROL_RESPUESTA
+            $query_control = "DELETE FROM CONTROL_RESPUESTA WHERE ID_Incidencia = ?";
+            $stmt_control = $this->conn->prepare($query_control);
+            $stmt_control->execute([$id]);
+            
+            // Eliminar registros relacionados en INCIDENCIA_COMENTARIO
+            $query_comentarios = "DELETE FROM INCIDENCIA_COMENTARIO WHERE ID_Incidencia = ?";
+            $stmt_comentarios = $this->conn->prepare($query_comentarios);
+            $stmt_comentarios->execute([$id]);
+            
+            // Eliminar registros relacionados en INCIDENCIA_HISTORIAL
+            $query_historial = "DELETE FROM INCIDENCIA_HISTORIAL WHERE ID_Incidencia = ?";
+            $stmt_historial = $this->conn->prepare($query_historial);
+            $stmt_historial->execute([$id]);
+            
+            // Eliminar registros relacionados en INCIDENCIA_SOLUCION
+            $query_solucion = "DELETE FROM INCIDENCIA_SOLUCION WHERE ID_Incidencia = ?";
+            $stmt_solucion = $this->conn->prepare($query_solucion);
+            $stmt_solucion->execute([$id]);
+            
+            // Eliminar registros relacionados en INCIDENCIA_EVALUACION
+            $query_evaluacion = "DELETE FROM INCIDENCIA_EVALUACION WHERE ID_Incidencia = ?";
+            $stmt_evaluacion = $this->conn->prepare($query_evaluacion);
+            $stmt_evaluacion->execute([$id]);
+            
+            // Eliminar la incidencia
+            $query = "DELETE FROM " . $this->table_name . " WHERE ID = ?";
+            $stmt = $this->conn->prepare($query);
+            $result = $stmt->execute([$id]);
+            
+            // Confirmar la transacción
+            $this->conn->commit();
+            
+            return $result;
+        } catch (Exception $e) {
+            // Si ocurrió un error, revertir los cambios
+            $this->conn->rollBack();
+            
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::delete(): " . $e->getMessage());
+            return false;
+        }
     }
     
     /**
@@ -333,31 +404,218 @@ class Incidencia {
     }
     
     /**
-     * Contar incidencias por estado (para dashboard)
-     * @return PDOStatement Resultado de la consulta
+     * Agregar comentario a una incidencia
+     * @param integer $id_incidencia ID de la incidencia
+     * @param integer $id_usuario ID del usuario que comenta
+     * @param string $comentario Texto del comentario
+     * @param string $tipo_comentario Tipo del comentario (COMENTARIO, ACTUALIZACION, SOLUCION, etc.)
+     * @param boolean $publico Si el comentario es visible para el usuario
+     * @return boolean True si se agregó correctamente
      */
-    public function contarPorEstado() {
-        $query = "SELECT s.Descripcion as Estado, COUNT(i.ID) as Total 
-                  FROM ESTATUS_INCIDENCIA s
-                  LEFT JOIN INCIDENCIA i ON s.ID = i.ID_Stat
-                  GROUP BY s.Descripcion
-                  ORDER BY Total DESC";
+    public function agregarComentario($id_incidencia, $id_usuario, $comentario, $tipo_comentario = 'COMENTARIO', $publico = true) {
+        $query = "INSERT INTO INCIDENCIA_COMENTARIO (ID_Incidencia, ID_Usuario, Comentario, TipoComentario, FechaRegistro, Publico) 
+                  VALUES (?, ?, ?, ?, GETDATE(), ?)";
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            return $stmt->execute([$id_incidencia, $id_usuario, $comentario, $tipo_comentario, $publico ? 1 : 0]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::agregarComentario(): " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Registrar historial de cambio de estado
+     * @param integer $id_incidencia ID de la incidencia
+     * @param integer $id_estado_anterior ID del estado anterior
+     * @param integer $id_estado_nuevo ID del nuevo estado
+     * @param integer $id_usuario ID del usuario que realiza el cambio
+     * @return boolean True si se registró correctamente
+     */
+    public function registrarCambioEstado($id_incidencia, $id_estado_anterior, $id_estado_nuevo, $id_usuario) {
+        $query = "INSERT INTO INCIDENCIA_HISTORIAL (ID_Incidencia, ID_EstadoAnterior, ID_EstadoNuevo, ID_Usuario, FechaCambio) 
+                  VALUES (?, ?, ?, ?, GETDATE())";
         
-        // Ejecutar la consulta
-        $stmt->execute();
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            return $stmt->execute([$id_incidencia, $id_estado_anterior, $id_estado_nuevo, $id_usuario]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::registrarCambioEstado(): " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Registrar solución de una incidencia
+     * @param integer $id_incidencia ID de la incidencia
+     * @param string $descripcion Descripción de la solución
+     * @param integer $id_usuario ID del usuario que registra la solución
+     * @return boolean True si se registró correctamente
+     */
+    public function registrarSolucion($id_incidencia, $descripcion, $id_usuario) {
+        $query = "INSERT INTO INCIDENCIA_SOLUCION (ID_Incidencia, Descripcion, FechaRegistro, ID_Usuario) 
+                  VALUES (?, ?, GETDATE(), ?)";
         
-        return $stmt;
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            return $stmt->execute([$id_incidencia, $descripcion, $id_usuario]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::registrarSolucion(): " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Evaluar la resolución de una incidencia
+     * @param integer $id_incidencia ID de la incidencia
+     * @param integer $id_usuario ID del usuario que evalúa
+     * @param integer $id_tecnico ID del técnico evaluado
+     * @param integer $calificacion Calificación (1-5)
+     * @param string $comentario Comentario de la evaluación
+     * @return boolean True si se registró correctamente
+     */
+    public function evaluarResolucion($id_incidencia, $id_usuario, $id_tecnico, $calificacion, $comentario = '') {
+        $query = "INSERT INTO INCIDENCIA_EVALUACION (ID_Incidencia, ID_Usuario, ID_Tecnico, Calificacion, Comentario, FechaRegistro) 
+                  VALUES (?, ?, ?, ?, ?, GETDATE())";
+        
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            return $stmt->execute([$id_incidencia, $id_usuario, $id_tecnico, $calificacion, $comentario]);
+        } catch (Exception $e) {
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::evaluarResolucion(): " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Obtener estadísticas de incidencias (para dashboard)
+     * @param integer $id_tecnico ID del técnico (opcional, para filtrar)
+     * @return array Resultado con estadísticas
+     */
+    public function getEstadisticas($id_tecnico = null) {
+        // Preparar array de resultados
+        $estadisticas = [];
+        
+        try {
+            // Condición para filtrar por técnico si se proporciona
+            $tecnico_condition = "";
+            $params = [];
+            
+            if ($id_tecnico) {
+                $tecnico_condition = " WHERE i.ID_Tecnico = ?";
+                $params[] = $id_tecnico;
+            }
+            
+            // 1. Total de incidencias
+            $queryTotal = "SELECT COUNT(*) as total FROM " . $this->table_name . " i" . $tecnico_condition;
+            $stmtTotal = $this->conn->prepare($queryTotal);
+            $stmtTotal->execute($params);
+            $estadisticas['total'] = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // 2. Incidencias abiertas (Nueva, Asignada, En proceso, En espera)
+            $params_abiertas = $params;
+            $queryAbiertas = "SELECT COUNT(*) as total FROM " . $this->table_name . " i 
+                             " . ($tecnico_condition ? $tecnico_condition . " AND" : " WHERE") . " i.ID_Stat IN (1, 2, 3, 4)";
+            $stmtAbiertas = $this->conn->prepare($queryAbiertas);
+            $stmtAbiertas->execute($params_abiertas);
+            $estadisticas['abiertas'] = $stmtAbiertas->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // 3. Incidencias resueltas/cerradas
+            $params_resueltas = $params;
+            $queryResueltas = "SELECT COUNT(*) as total FROM " . $this->table_name . " i 
+                             " . ($tecnico_condition ? $tecnico_condition . " AND" : " WHERE") . " i.ID_Stat IN (5, 6)";
+            $stmtResueltas = $this->conn->prepare($queryResueltas);
+            $stmtResueltas->execute($params_resueltas);
+            $estadisticas['resueltas'] = $stmtResueltas->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // 4. Incidencias críticas
+            $params_criticas = $params;
+            $queryCriticas = "SELECT COUNT(*) as total FROM " . $this->table_name . " i 
+                            " . ($tecnico_condition ? $tecnico_condition . " AND" : " WHERE") . " i.ID_Prioridad = 1"; // 1 = Crítica
+            $stmtCriticas = $this->conn->prepare($queryCriticas);
+            $stmtCriticas->execute($params_criticas);
+            $estadisticas['criticas'] = $stmtCriticas->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // 5. Tiempo promedio de resolución (en días)
+            $params_tiempo = $params;
+            $queryTiempo = "SELECT AVG(DATEDIFF(day, FechaInicio, FechaTerminacion)) as promedio 
+                           FROM " . $this->table_name . " i 
+                           " . ($tecnico_condition ? $tecnico_condition . " AND" : " WHERE") . " i.FechaTerminacion IS NOT NULL";
+            $stmtTiempo = $this->conn->prepare($queryTiempo);
+            $stmtTiempo->execute($params_tiempo);
+            $estadisticas['tiempo_promedio'] = $stmtTiempo->fetch(PDO::FETCH_ASSOC)['promedio'];
+            
+            // 6. Incidencias creadas en los últimos 30 días
+            $params_recientes = $params;
+            $queryRecientes = "SELECT COUNT(*) as total FROM " . $this->table_name . " i 
+                             " . ($tecnico_condition ? $tecnico_condition . " AND" : " WHERE") . " i.FechaInicio >= DATEADD(day, -30, GETDATE())";
+            $stmtRecientes = $this->conn->prepare($queryRecientes);
+            $stmtRecientes->execute($params_recientes);
+            $estadisticas['recientes'] = $stmtRecientes->fetch(PDO::FETCH_ASSOC)['total'];
+            
+            // 7. Incidencias por estado
+            $queryPorEstado = "SELECT s.Descripcion as Estado, COUNT(i.ID) as Total 
+                              FROM ESTATUS_INCIDENCIA s
+                              LEFT JOIN " . $this->table_name . " i ON s.ID = i.ID_Stat
+                              " . ($tecnico_condition ? str_replace("i.", "", $tecnico_condition) : "") . "
+                              GROUP BY s.Descripcion
+                              ORDER BY Total DESC";
+            $stmtPorEstado = $this->conn->prepare($queryPorEstado);
+            $stmtPorEstado->execute($params);
+            $estadisticas['por_estado'] = $stmtPorEstado->fetchAll(PDO::FETCH_ASSOC);
+            
+            // 8. Incidencias por prioridad
+            $queryPorPrioridad = "SELECT p.Descripcion as Prioridad, COUNT(i.ID) as Total 
+                                 FROM PRIORIDAD p
+                                 LEFT JOIN " . $this->table_name . " i ON p.ID = i.ID_Prioridad
+                                 " . ($tecnico_condition ? str_replace("i.", "", $tecnico_condition) : "") . "
+                                 GROUP BY p.Descripcion
+                                 ORDER BY Total DESC";
+            $stmtPorPrioridad = $this->conn->prepare($queryPorPrioridad);
+            $stmtPorPrioridad->execute($params);
+            $estadisticas['por_prioridad'] = $stmtPorPrioridad->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $estadisticas;
+        } catch (Exception $e) {
+            // Registrar el error y devolver un array vacío
+            error_log("Error en Incidencia::getEstadisticas(): " . $e->getMessage());
+            return [
+                'total' => 0,
+                'abiertas' => 0,
+                'resueltas' => 0,
+                'criticas' => 0,
+                'tiempo_promedio' => 0,
+                'recientes' => 0,
+                'por_estado' => [],
+                'por_prioridad' => []
+            ];
+        }
     }
     
     /**
      * Obtener incidencias asignadas a un técnico
      * @param integer $id_tecnico ID del técnico
+     * @param integer $limit Límite de resultados (opcional)
      * @return PDOStatement Resultado de la consulta
      */
-    public function getAsignadasATecnico($id_tecnico) {
+    public function getAsignadasATecnico($id_tecnico, $limit = null) {
         $query = "SELECT i.ID, i.Descripcion, i.FechaInicio, p.Descripcion as Prioridad,
                          s.Descripcion as Estado, ci.Nombre as CI_Nombre
                   FROM " . $this->table_name . " i
@@ -366,23 +624,34 @@ class Incidencia {
                   LEFT JOIN CI ci ON i.ID_CI = ci.ID
                   WHERE i.ID_Tecnico = ?
                   AND i.ID_Stat IN (2, 3, 4) -- Asignada, En proceso, En espera
-                  ORDER BY i.FechaInicio DESC";
+                  ORDER BY i.ID_Prioridad ASC, i.FechaInicio DESC";
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
+        if ($limit !== null && is_numeric($limit)) {
+            $query .= " OFFSET 0 ROWS FETCH NEXT $limit ROWS ONLY";
+        }
         
-        // Ejecutar la consulta
-        $stmt->execute([$id_tecnico]);
-        
-        return $stmt;
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            $stmt->execute([$id_tecnico]);
+            
+            return $stmt;
+        } catch (Exception $e) {
+            // Registrar el error y devolver null
+            error_log("Error en Incidencia::getAsignadasATecnico(): " . $e->getMessage());
+            return null;
+        }
     }
     
     /**
      * Obtener incidencias reportadas por un usuario
      * @param integer $id_usuario ID del usuario que reportó
+     * @param integer $limit Límite de resultados (opcional)
      * @return PDOStatement Resultado de la consulta
      */
-    public function getReportadasPorUsuario($id_usuario) {
+    public function getReportadasPorUsuario($id_usuario, $limit = null) {
         $query = "SELECT i.ID, i.Descripcion, i.FechaInicio, i.FechaTerminacion,
                          p.Descripcion as Prioridad, s.Descripcion as Estado,
                          ci.Nombre as CI_Nombre, e.Nombre as Tecnico_Nombre
@@ -394,65 +663,59 @@ class Incidencia {
                   WHERE i.CreatedBy = ?
                   ORDER BY i.FechaInicio DESC";
         
-        // Preparar la consulta
-        $stmt = $this->conn->prepare($query);
+        if ($limit !== null && is_numeric($limit)) {
+            $query .= " OFFSET 0 ROWS FETCH NEXT $limit ROWS ONLY";
+        }
         
-        // Ejecutar la consulta
-        $stmt->execute([$id_usuario]);
-        
-        return $stmt;
+        try {
+            // Preparar la consulta
+            $stmt = $this->conn->prepare($query);
+            
+            // Ejecutar la consulta
+            $stmt->execute([$id_usuario]);
+            
+            return $stmt;
+        } catch (Exception $e) {
+            // Registrar el error y devolver null
+            error_log("Error en Incidencia::getReportadasPorUsuario(): " . $e->getMessage());
+            return null;
+        }
     }
     
     /**
-     * Obtener estadísticas de incidencias (para dashboard)
-     * @return array Resultado con estadísticas
+     * Registrar respuestas a preguntas de control
+     * @param integer $id_incidencia ID de la incidencia
+     * @param array $respuestas Array asociativo con ID_Pregunta => Respuesta
+     * @return boolean True si se registraron correctamente
      */
-    public function getEstadisticas() {
-        // Preparar array de resultados
-        $estadisticas = [];
+    public function registrarRespuestasControl($id_incidencia, $respuestas) {
+        if (empty($respuestas)) {
+            return true; // No hay respuestas para registrar
+        }
         
-        // 1. Total de incidencias
-        $queryTotal = "SELECT COUNT(*) as total FROM " . $this->table_name;
-        $stmtTotal = $this->conn->prepare($queryTotal);
-        $stmtTotal->execute();
-        $estadisticas['total'] = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'];
-        
-        // 2. Incidencias abiertas (Nueva, Asignada, En proceso, En espera)
-        $queryAbiertas = "SELECT COUNT(*) as total FROM " . $this->table_name . 
-                          " WHERE ID_Stat IN (1, 2, 3, 4)";
-        $stmtAbiertas = $this->conn->prepare($queryAbiertas);
-        $stmtAbiertas->execute();
-        $estadisticas['abiertas'] = $stmtAbiertas->fetch(PDO::FETCH_ASSOC)['total'];
-        
-        // 3. Incidencias resueltas/cerradas
-        $queryResueltas = "SELECT COUNT(*) as total FROM " . $this->table_name . 
-                           " WHERE ID_Stat IN (5, 6)";
-        $stmtResueltas = $this->conn->prepare($queryResueltas);
-        $stmtResueltas->execute();
-        $estadisticas['resueltas'] = $stmtResueltas->fetch(PDO::FETCH_ASSOC)['total'];
-        
-        // 4. Incidencias críticas
-        $queryCriticas = "SELECT COUNT(*) as total FROM " . $this->table_name . 
-                          " WHERE ID_Prioridad = 1"; // 1 = Crítica
-        $stmtCriticas = $this->conn->prepare($queryCriticas);
-        $stmtCriticas->execute();
-        $estadisticas['criticas'] = $stmtCriticas->fetch(PDO::FETCH_ASSOC)['total'];
-        
-        // 5. Tiempo promedio de resolución (en días)
-        $queryTiempo = "SELECT AVG(DATEDIFF(day, FechaInicio, FechaTerminacion)) as promedio 
-                         FROM " . $this->table_name . " 
-                         WHERE FechaTerminacion IS NOT NULL";
-        $stmtTiempo = $this->conn->prepare($queryTiempo);
-        $stmtTiempo->execute();
-        $estadisticas['tiempo_promedio'] = $stmtTiempo->fetch(PDO::FETCH_ASSOC)['promedio'];
-        
-        // 6. Incidencias creadas en los últimos 30 días
-        $queryRecientes = "SELECT COUNT(*) as total FROM " . $this->table_name . 
-                           " WHERE FechaInicio >= DATEADD(day, -30, GETDATE())";
-        $stmtRecientes = $this->conn->prepare($queryRecientes);
-        $stmtRecientes->execute();
-        $estadisticas['recientes'] = $stmtRecientes->fetch(PDO::FETCH_ASSOC)['total'];
-        
-        return $estadisticas;
+        try {
+            // Comenzar transacción
+            $this->conn->beginTransaction();
+            
+            $query = "INSERT INTO CONTROL_RESPUESTA (ID_Incidencia, ID_Pregunta, Respuesta, FechaRegistro) 
+                      VALUES (?, ?, ?, GETDATE())";
+            $stmt = $this->conn->prepare($query);
+            
+            foreach ($respuestas as $pregunta_id => $respuesta) {
+                $stmt->execute([$id_incidencia, $pregunta_id, $respuesta]);
+            }
+            
+            // Confirmar transacción
+            $this->conn->commit();
+            
+            return true;
+        } catch (Exception $e) {
+            // Revertir transacción en caso de error
+            $this->conn->rollBack();
+            
+            // Registrar el error y devolver false
+            error_log("Error en Incidencia::registrarRespuestasControl(): " . $e->getMessage());
+            return false;
+        }
     }
 }
