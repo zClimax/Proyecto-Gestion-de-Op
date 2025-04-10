@@ -84,6 +84,7 @@ try {
             case 'Supervisor Infraestructura':
             case 'Supervisor Sistemas':
             case 'Encargado Inventario':
+            case 'Coordinador TI CEDIS':
                 // Estos roles pueden ver todos los CIs
                 $tiene_permiso = true;
                 break;
@@ -177,7 +178,7 @@ try {
     if (!$tiene_permiso) {
         // Registrar intento de acceso no autorizado (opcional)
         $log_query = "INSERT INTO LOG_ACCESO (ID_Usuario, FechaAcceso, TipoAcceso, RecursoAccedido, Resultado) 
-                      VALUES (?, NOW(), 'Visualización CI', ?, 'Denegado')";
+                      VALUES (?, GETDATE(), 'Visualización CI', ?, 'Denegado')";
         $log_stmt = $conn->prepare($log_query);
         $log_stmt->execute([$_SESSION['user_id'], 'CI ID: ' . $ci_id]);
         

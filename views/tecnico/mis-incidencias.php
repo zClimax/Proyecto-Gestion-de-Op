@@ -39,14 +39,13 @@ if (!empty($filtro_busqueda)) {
 // Obtener incidencias asignadas al técnico según los filtros
 $stmt = $incidencia->getAll($filtros);
 
+// Obtener los resultados en un array
+$incidencias = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-
-// Depuración temporal - DEBE IR DESPUÉS de definir $incidencias
-if (count($incidencias) > 0) {
-    echo '<pre>';
-    print_r($incidencias[0]); // Imprime el primer elemento para ver su estructura
-    echo '</pre>';
-}
+// Para depuración - comenta estas líneas en producción
+// echo "<pre>";
+// print_r($incidencias);
+// echo "</pre>";
 
 // Obtener listas para filtros
 $prioridades = $incidencia->getPrioridades()->fetchAll(PDO::FETCH_ASSOC);
@@ -214,8 +213,6 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
     </div>
 </div>
 
-
-
 <!-- Lista de incidencias -->
 <div class="row">
     <div class="col-12">
@@ -224,10 +221,7 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
                 <h5 class="mb-0">Incidencias Asignadas</h5>
             </div>
             <div class="card-body">
-                <?php 
-                $incidencias = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                if (count($incidencias) > 0): 
-                ?>
+                <?php if (count($incidencias) > 0): ?>
                 <div class="table-responsive">
                     <table class="table table-striped table-hover">
                         <thead>
@@ -249,22 +243,23 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
                                     <td><?php echo substr(htmlspecialchars($inc['Descripcion']), 0, 50) . (strlen($inc['Descripcion']) > 50 ? '...' : ''); ?></td>
                                     <td><?php echo htmlspecialchars($inc['CI_Nombre']); ?></td>
                                     <td>
-                                    <?php
-                                  // Obtener el nombre del usuario que reportó
-                                  if (isset($inc['CreatedBy'])) {
-                                 $query_usuario = "SELECT e.Nombre 
-                                FROM USUARIO u 
-                               JOIN EMPLEADO e ON u.ID_Empleado = e.ID 
-                               WHERE u.ID = ?";
-                             $stmt_usuario = $conn->prepare($query_usuario);
-                           $stmt_usuario->execute([$inc['CreatedBy']]);
-                            $usuario = $stmt_usuario->fetch(PDO::FETCH_ASSOC);
-                           echo htmlspecialchars($usuario['Nombre'] ?? 'Desconocido');
-                         } else {
-                       echo 'Desconocido';
-                           }
-                           ?>
-                            </td>
+                                        <?php
+                                        // Verificar si existe la clave CreatedBy
+                                        if (isset($inc['CreatedBy'])) {
+                                            // Obtener el nombre del usuario que reportó
+                                            $query_usuario = "SELECT e.Nombre 
+                                                             FROM USUARIO u 
+                                                             JOIN EMPLEADO e ON u.ID_Empleado = e.ID 
+                                                             WHERE u.ID = ?";
+                                            $stmt_usuario = $conn->prepare($query_usuario);
+                                            $stmt_usuario->execute([$inc['CreatedBy']]);
+                                            $usuario = $stmt_usuario->fetch(PDO::FETCH_ASSOC);
+                                            echo htmlspecialchars($usuario['Nombre'] ?? 'Desconocido');
+                                        } else {
+                                            echo 'Desconocido';
+                                        }
+                                        ?>
+                                    </td>
                                     <td><?php echo date('d/m/Y H:i', strtotime($inc['FechaInicio'])); ?></td>
                                     <td>
                                         <?php 
@@ -308,11 +303,16 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
                                         <a href="ver-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-info" title="Ver detalles">
                                             <i class="fas fa-eye"></i>
                                         </a>
-                                        <?php if (isset($inc['ID_Estado']) && $inc['ID_Estado'] != 6): // No mostrar si está Cerrada ?>
-<a href="actualizar-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-warning" title="Actualizar estado">
-    <i class="fas fa-edit"></i>
-</a>
-<?php endif; ?>
+                                        
+                                        <?php 
+                                        // Verificar si existe la clave ID_Estado o usar ID_Stat si existe
+                                        $estadoID = isset($inc['ID_Estado']) ? $inc['ID_Estado'] : (isset($inc['ID_Stat']) ? $inc['ID_Stat'] : 0);
+                                        if ($estadoID != 6): // No mostrar si está Cerrada 
+                                        ?>
+                                        <a href="actualizar-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-warning" title="Actualizar estado">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
