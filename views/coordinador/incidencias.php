@@ -251,18 +251,22 @@ $estadisticas = $incidencia->getEstadisticas();
                                     <td><?php echo substr(htmlspecialchars($inc['Descripcion']), 0, 50) . (strlen($inc['Descripcion']) > 50 ? '...' : ''); ?></td>
                                     <td><?php echo htmlspecialchars($inc['CI_Nombre']); ?></td>
                                     <td>
-                                        <?php
-                                        // Obtener el nombre del usuario que reportó
-                                        $query_usuario = "SELECT e.Nombre 
-                                                         FROM USUARIO u 
-                                                         JOIN EMPLEADO e ON u.ID_Empleado = e.ID 
-                                                         WHERE u.ID = ?";
-                                        $stmt_usuario = $conn->prepare($query_usuario);
-                                        $stmt_usuario->execute([$inc['CreatedBy']]);
-                                        $usuario = $stmt_usuario->fetch(PDO::FETCH_ASSOC);
-                                        echo htmlspecialchars($usuario['Nombre'] ?? 'Desconocido');
-                                        ?>
-                                    </td>
+    <?php
+    // Obtener el nombre del usuario que reportó
+    if (isset($inc['CreatedBy'])) {
+        $query_usuario = "SELECT e.Nombre 
+                         FROM USUARIO u 
+                         JOIN EMPLEADO e ON u.ID_Empleado = e.ID 
+                         WHERE u.ID = ?";
+        $stmt_usuario = $conn->prepare($query_usuario);
+        $stmt_usuario->execute([$inc['CreatedBy']]);
+        $usuario = $stmt_usuario->fetch(PDO::FETCH_ASSOC);
+        echo htmlspecialchars($usuario['Nombre'] ?? 'Desconocido');
+    } else {
+        echo 'Desconocido';
+    }
+    ?>
+</td>
                                     <td><?php echo date('d/m/Y H:i', strtotime($inc['FechaInicio'])); ?></td>
                                     <td>
                                         <?php 

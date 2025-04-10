@@ -54,9 +54,6 @@ try {
     // Guardar el estado anterior para el historial
     $estado_anterior = $incidencia->id_stat;
     
-    // Iniciar transacción
-    $conn->beginTransaction();
-    
     // Determinar el tipo de comentario
     $tipo_comentario = 'ACTUALIZACION';
     if ($nuevo_estado == 5) { // 5 = Resuelta
@@ -84,19 +81,11 @@ try {
         throw new Exception("Error al agregar el comentario.");
     }
     
-    // Confirmar la transacción
-    $conn->commit();
-    
     // Redireccionar con mensaje de éxito
     header("Location: mis-incidencias.php?success=updated");
     exit;
     
 } catch (Exception $e) {
-    // Si hubo error, revertir la transacción
-    if (isset($conn)) {
-        $conn->rollBack();
-    }
-    
     // Redireccionar con mensaje de error
     header("Location: mis-incidencias.php?error=update_failed&message=" . urlencode($e->getMessage()));
     exit;

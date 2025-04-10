@@ -39,15 +39,6 @@ if (!empty($filtro_busqueda)) {
 // Obtener incidencias asignadas al técnico según los filtros
 $stmt = $incidencia->getAll($filtros);
 
-
-
-// Depuración temporal - DEBE IR DESPUÉS de definir $incidencias
-if (count($incidencias) > 0) {
-    echo '<pre>';
-    print_r($incidencias[0]); // Imprime el primer elemento para ver su estructura
-    echo '</pre>';
-}
-
 // Obtener listas para filtros
 $prioridades = $incidencia->getPrioridades()->fetchAll(PDO::FETCH_ASSOC);
 $estados = $incidencia->getEstados()->fetchAll(PDO::FETCH_ASSOC);
@@ -214,8 +205,6 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
     </div>
 </div>
 
-
-
 <!-- Lista de incidencias -->
 <div class="row">
     <div class="col-12">
@@ -308,11 +297,12 @@ $estadisticas = $incidencia->getEstadisticas($_SESSION['empleado_id']);
                                         <a href="ver-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-info" title="Ver detalles">
                                             <i class="fas fa-eye"></i>
                                         </a>
-                                        <?php if (isset($inc['ID_Estado']) && $inc['ID_Estado'] != 6): // No mostrar si está Cerrada ?>
-<a href="actualizar-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-warning" title="Actualizar estado">
-    <i class="fas fa-edit"></i>
-</a>
-<?php endif; ?>
+                                        
+                                        <?php if ($inc['ID_Estado'] != 6): // No mostrar si está Cerrada ?>
+                                        <a href="actualizar-incidencia.php?id=<?php echo $inc['ID']; ?>" class="btn btn-sm btn-warning" title="Actualizar estado">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
