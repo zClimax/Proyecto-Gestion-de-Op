@@ -24,11 +24,6 @@ $conn = $database->getConnection();
 
 $problema = new Problema($conn);
 
-// Verificar que el problema existe
-if (!$problema->getById($problema_id)) {
-    header("Location: problemas.php?error=not_found");
-    exit;
-}
 
 // Obtener listas para los selectores
 $categorias = $problema->getCategorias()->fetchAll(PDO::FETCH_ASSOC);

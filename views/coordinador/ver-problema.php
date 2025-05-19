@@ -25,11 +25,7 @@ $conn = $database->getConnection();
 $problema = new Problema($conn);
 $incidencia = new Incidencia($conn);
 
-// Obtener detalles del problema
-if (!$problema->getById($problema_id)) {
-    header("Location: problemas.php?error=not_found");
-    exit;
-}
+
 
 // Obtener comentarios del problema
 $stmt_comentarios = $problema->getComentarios($problema_id);

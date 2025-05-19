@@ -104,18 +104,18 @@ class Problema {
      */
     public function getById($id) {
         $query = "SELECT p.ID, p.Titulo, p.Descripcion, p.FechaIdentificacion, p.FechaResolucion,
-                         p.ID_Prioridad, p.ID_Categoria, p.ID_Impacto, p.ID_Stat, p.ID_Responsable, 
-                         p.CreatedBy, p.CreatedDate, p.ModifiedBy, p.ModifiedDate,
-                         pri.Descripcion as Prioridad, cat.Nombre as Categoria, 
-                         imp.Descripcion as Impacto, s.Descripcion as Estado,
-                         e.Nombre as ResponsableNombre
-                  FROM " . $this->table_name . " p
-                  LEFT JOIN PRIORIDAD pri ON p.ID_Prioridad = pri.ID
-                  LEFT JOIN CATEGORIA_PROBLEMA cat ON p.ID_Categoria = cat.ID
-                  LEFT JOIN IMPACTO imp ON p.ID_Impacto = imp.ID
-                  LEFT JOIN ESTATUS_PROBLEMA s ON p.ID_Stat = s.ID
-                  LEFT JOIN EMPLEADO e ON p.ID_Responsable = e.ID
-                  WHERE p.ID = ?";
+        p.ID_Prioridad, p.ID_Categoria, p.ID_Impacto, p.ID_Stat, p.ID_Responsable, 
+        p.CreatedBy, p.CreatedDate, p.ModifiedBy, p.ModifiedDate,
+        pri.Descripcion as Prioridad, cat.Nombre as Categoria, 
+        imp.Descripcion as Impacto, s.Descripcion as Estado,
+        e.Nombre as ResponsableNombre
+ FROM [ControlIncidenciasDB].[dbo].[" . $this->table_name . "] p
+ LEFT JOIN [ControlIncidenciasDB].[dbo].[PRIORIDAD] pri ON p.ID_Prioridad = pri.ID
+ LEFT JOIN [ControlIncidenciasDB].[dbo].[CATEGORIA_PROBLEMA] cat ON p.ID_Categoria = cat.ID
+ LEFT JOIN [ControlIncidenciasDB].[dbo].[IMPACTO] imp ON p.ID_Impacto = imp.ID
+ LEFT JOIN [ControlIncidenciasDB].[dbo].[ESTATUS_PROBLEMA] s ON p.ID_Stat = s.ID
+ LEFT JOIN [ControlIncidenciasDB].[dbo].[EMPLEADO] e ON p.ID_Responsable = e.ID
+ WHERE p.ID = ?";
         
         // Preparar la consulta
         $stmt = $this->conn->prepare($query);
