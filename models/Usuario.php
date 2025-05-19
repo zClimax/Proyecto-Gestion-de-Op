@@ -283,7 +283,8 @@ class Usuario {
                     'gestionar_usuarios' => true,
                     'gestionar_ci' => true,
                     'gestionar_incidencias' => true,
-                    'ver_reportes' => true
+                    'ver_reportes' => true,
+                    'gestionar_problemas' => true
                 ];
                 break;
                 
@@ -295,7 +296,8 @@ class Usuario {
                     'gestionar_usuarios' => false,
                     'gestionar_ci' => true,
                     'gestionar_incidencias' => true,
-                    'ver_reportes' => true
+                    'ver_reportes' => true,
+                    'gestionar_problemas' => true
                 ];
                 break;
                 

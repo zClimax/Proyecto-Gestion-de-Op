@@ -206,7 +206,6 @@ $stmt_tipos_ci->execute();
             </div>
         </div>
     </div>
-    
     <div class="col-md-6">
         <div class="card card-dashboard">
             <div class="card-body">
@@ -219,6 +218,18 @@ $stmt_tipos_ci->execute();
         </div>
     </div>
 </div>
+<div class="col-md-6">
+        <div class="card card-dashboard">
+            <div class="card-body">
+                <h5 class="card-title">Gestión de Problemas</h5>
+                <p class="card-text">Administre problemas conocidos y sus soluciones.</p>
+                <a href="problemas.php" class="btn btn-primary">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Gestionar Problemas
+                </a>
+            </div>
+        </div>
+    </div>
+
 
 <!-- Incidencias pendientes por asignar -->
 <div class="row mb-4">

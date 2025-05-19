@@ -23,10 +23,21 @@ $conn = $database->getConnection();
 $incidencia_model = new Incidencia($conn);
 
 // Obtener detalles de la incidencia
-if (!$incidencia_model->getById($incidencia_id)) {
-    header("Location: incidencias.php?error=not_found");
-    exit;
-}
+$query = "SELECT i.ID, i.Descripcion, i.FechaInicio, i.FechaTerminacion, 
+                 i.ID_Prioridad, i.ID_CI, i.ID_Tecnico, i.ID_Stat, i.CreatedBy,
+                 p.Descripcion as Prioridad, s.Descripcion as Estado,
+                 ci.Nombre as CI_Nombre, t.Nombre as CI_Tipo,
+                 emp.Nombre as Reportado_Por_Nombre, emp.Email as Reportado_Por_Email,
+                 e.Nombre as Tecnico_Nombre
+          FROM INCIDENCIA i
+          LEFT JOIN PRIORIDAD p ON i.ID_Prioridad = p.ID
+          LEFT JOIN ESTATUS_INCIDENCIA s ON i.ID_Stat = s.ID
+          LEFT JOIN CI ci ON i.ID_CI = ci.ID
+          LEFT JOIN TIPO_CI t ON ci.ID_TipoCI = t.ID
+          LEFT JOIN USUARIO u ON i.CreatedBy = u.ID
+          LEFT JOIN EMPLEADO emp ON u.ID_Empleado = emp.ID
+          LEFT JOIN EMPLEADO e ON i.ID_Tecnico = e.ID
+          WHERE i.ID = ?";
 
 // Obtener comentarios y seguimiento de la incidencia
 $query_comentarios = "SELECT c.ID, c.Comentario, c.TipoComentario, c.FechaRegistro, 
@@ -36,6 +47,8 @@ $query_comentarios = "SELECT c.ID, c.Comentario, c.TipoComentario, c.FechaRegist
                       LEFT JOIN EMPLEADO e ON u.ID_Empleado = e.ID
                       WHERE c.ID_Incidencia = ?
                       ORDER BY c.FechaRegistro ASC";
+
+                      
 $stmt_comentarios = $conn->prepare($query_comentarios);
 $stmt_comentarios->execute([$incidencia_id]);
 
@@ -224,9 +237,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <tr>
                                 <th>Reportado por:</th>
                                 <td>
-                                    <?php echo htmlspecialchars($usuario_reporto['Nombre']); ?>
-                                    <?php if (!empty($usuario_reporto['Email'])): ?>
-                                        <br><small><a href="mailto:<?php echo htmlspecialchars($usuario_reporto['Email']); ?>"><?php echo htmlspecialchars($usuario_reporto['Email']); ?></a></small>
+                                    <?php echo htmlspecialchars($incidencia['Reportado_Por_Nombre'] ?? 'Desconocido'); ?>
+                                    <?php if (!empty($incidencia['Reportado_Por_Email'])): ?>
+                                        <br><small><a href="mailto:<?php echo htmlspecialchars($incidencia['Reportado_Por_Email']); ?>"><?php echo htmlspecialchars($incidencia['Reportado_Por_Email']); ?></a></small>
                                     <?php endif; ?>
                                 </td>
                             </tr>
